@@ -181,7 +181,7 @@ function hasWon(gameState, color) {
 }
 
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+  console.log('User connected:');
 
   // Create room
   socket.on('create-room', (playerName) => {
@@ -388,7 +388,7 @@ io.on('connection', (socket) => {
 
   // Handle disconnect
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    console.log('User disconnected:');
     
     // Remove player from all rooms
     for (const [roomCode, room] of rooms.entries()) {
