@@ -47,7 +47,7 @@ const HOME_STRETCH_START = {
   blue: 38
 };
 
-const SAFE_POSITIONS = [1, 9, 14, 22, 27, 35, 40, 48]; // Star positions
+const SAFE_POSITIONS = [0, 9, 14, 22, 27, 35, 40, 48]; // Star positions
 
 // Initialize game state
 function createGameState() {
