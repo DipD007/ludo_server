@@ -26,28 +26,22 @@ function generateRoomCode() {
 
 // Ludo board positions (0-51 for main track, -1 for home, 100+ for home stretch)
 const BOARD_SIZE = 52;
-const HOME_POSITIONS = {
-  red: [1, 2, 3, 4],
-  green: [14, 15, 16, 17],
-  yellow: [27, 28, 29, 30],
-  blue: [40, 41, 42, 43]
-};
 
 const START_POSITIONS = {
-  red: 1,
-  green: 14,
-  yellow: 27,
-  blue: 40
+  red: 0,    // Fixed: Red starts at position 0 (safe position)
+  green: 13,
+  yellow: 26,
+  blue: 39
 };
 
 const HOME_STRETCH_START = {
-  red: 51,
-  green: 12,
-  yellow: 25,
-  blue: 38
+  red: 50,   // Fixed: Red home stretch starts at position 50
+  green: 11,
+  yellow: 24,
+  blue: 37
 };
 
-const SAFE_POSITIONS = [0, 9, 14, 22, 27, 35, 40, 48]; // Star positions
+const SAFE_POSITIONS = [0, 8, 13, 21, 26, 34, 39, 47]; // Star positions as specified
 
 // Initialize game state
 function createGameState() {
@@ -58,6 +52,7 @@ function createGameState() {
     diceValue: 1,
     lastRoll: null,
     canRollAgain: false,
+    gameWinner: null,
     pieces: {
       red: [
         { position: -1, homeIndex: 0, isInHomeStretch: false },
@@ -104,7 +99,7 @@ function canMovePiece(piece, diceValue, color) {
 
 function movePiece(piece, diceValue, color) {
   if (piece.position === -1 && diceValue === 6) {
-    // Move out of home
+    // Move out of home to starting position
     piece.position = START_POSITIONS[color];
     return { moved: true, captured: null };
   }
@@ -180,8 +175,17 @@ function hasWon(gameState, color) {
   );
 }
 
+function assignPlayerColors(playerCount) {
+  // For 2 players: use opposite colors (red/yellow or green/blue)
+  if (playerCount === 2) {
+    return ['red', 'yellow']; // Diagonal positions as requested
+  }
+  // For 3-4 players: use all colors in order
+  return ['red', 'green', 'yellow', 'blue'].slice(0, playerCount);
+}
+
 io.on('connection', (socket) => {
-  // console.log('User connected 😎');
+  console.log('User connected:', socket.id);
 
   // Create room
   socket.on('create-room', (playerName) => {
@@ -225,9 +229,9 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const colors = ['red', 'green', 'yellow', 'blue'];
+    const availableColors = assignPlayerColors(room.playerCount + 1);
     const usedColors = Object.values(room.players).map(p => p.color);
-    const availableColor = colors.find(color => !usedColors.includes(color));
+    const availableColor = availableColors.find(color => !usedColors.includes(color));
 
     room.players[socket.id] = {
       name: playerName,
@@ -265,16 +269,40 @@ io.on('connection', (socket) => {
     }
 
     room.gameStarted = true;
+    room.gameWinner = null;
     io.to(roomCode).emit('game-started', room);
     
     console.log(`Game started in room ${roomCode}`);
+  });
+
+  // Restart game
+  socket.on('restart-game', (roomCode) => {
+    const room = rooms.get(roomCode);
+    
+    if (!room) {
+      return;
+    }
+
+    // Reset game state but keep players
+    const newGameState = createGameState();
+    room.gameStarted = true;
+    room.gameWinner = null;
+    room.currentPlayer = 0;
+    room.diceValue = 1;
+    room.lastRoll = null;
+    room.canRollAgain = false;
+    room.pieces = newGameState.pieces;
+
+    io.to(roomCode).emit('game-restarted', room);
+    
+    console.log(`Game restarted in room ${roomCode}`);
   });
 
   // Roll dice
   socket.on('roll-dice', (roomCode) => {
     const room = rooms.get(roomCode);
     
-    if (!room || !room.gameStarted) {
+    if (!room || !room.gameStarted || room.gameWinner) {
       return;
     }
 
@@ -322,7 +350,7 @@ io.on('connection', (socket) => {
   socket.on('move-piece', ({ roomCode, pieceIndex }) => {
     const room = rooms.get(roomCode);
     
-    if (!room || !room.gameStarted) {
+    if (!room || !room.gameStarted || room.gameWinner) {
       return;
     }
 
@@ -379,6 +407,11 @@ io.on('connection', (socket) => {
     });
 
     if (hasPlayerWon) {
+      room.gameWinner = {
+        color: playerColor,
+        name: room.players[socket.id].name
+      };
+      
       io.to(roomCode).emit('game-won', {
         winner: playerColor,
         playerName: room.players[socket.id].name
@@ -388,7 +421,7 @@ io.on('connection', (socket) => {
 
   // Handle disconnect
   socket.on('disconnect', () => {
-    // console.log('User disconnected 🤨');
+    console.log('User disconnected:', socket.id);
     
     // Remove player from all rooms
     for (const [roomCode, room] of rooms.entries()) {
